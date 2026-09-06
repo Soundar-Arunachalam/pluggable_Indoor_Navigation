@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" width="1600" height="1200">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1" />
+    </pattern>
+  </defs>
+
+  <!-- Blueprint Background -->
+  <rect width="1600" height="1200" fill="#0b1329" />
+  <rect width="1600" height="1200" fill="url(#grid)" />
+
+  <!-- Outer Walls -->
+  <rect x="100" y="100" width="1400" height="1000" rx="16" fill="none" stroke="#38bdf8" stroke-width="8" />
+
+  <!-- Corridors -->
+  <!-- Central Hallway -->
+  <line x1="100" y1="600" x2="1500" y2="600" stroke="#0284c7" stroke-width="4" stroke-dasharray="12 8" />
+  <!-- Vertical Corridor -->
+  <line x1="800" y1="100" x2="800" y2="1100" stroke="#0284c7" stroke-width="4" stroke-dasharray="12 8" />
+
+  <!-- Room 1: North West Clinic -->
+  <rect x="150" y="150" width="400" height="350" fill="#0f172a" stroke="#38bdf8" stroke-width="4" />
+  <text x="350" y="325" fill="#bae6fd" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle">Emergency Triage</text>
+
+  <!-- Room 2: North East Imaging -->
+  <rect x="1050" y="150" width="400" height="350" fill="#0f172a" stroke="#38bdf8" stroke-width="4" />
+  <text x="1250" y="325" fill="#bae6fd" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle">Radiology &amp; MRI</text>
+
+  <!-- Room 3: South West Pharmacy -->
+  <rect x="150" y="700" width="400" height="350" fill="#0f172a" stroke="#38bdf8" stroke-width="4" />
+  <text x="350" y="875" fill="#bae6fd" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle">Pharmacy &amp; Supplies</text>
+
+  <!-- Room 4: South East Cafeteria -->
+  <rect x="1050" y="700" width="400" height="350" fill="#0f172a" stroke="#38bdf8" stroke-width="4" />
+  <text x="1250" y="875" fill="#bae6fd" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle">Cafeteria &amp; Lounge</text>
+
+  <!-- Center Elevator Core -->
+  <rect x="700" y="520" width="200" height="160" fill="#1e1b4b" stroke="#818cf8" stroke-width="4" />
+  <text x="800" y="605" fill="#c7d2fe" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">🛗 Elevator Core</text>
+
+  <!-- Dimensions Indicator -->
+  <text x="800" y="70" fill="#38bdf8" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">SCALE: 80.0 METERS × 60.0 METERS</text>
+</svg>

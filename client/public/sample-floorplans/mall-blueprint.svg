@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" width="1600" height="1200">
+  <defs>
+    <pattern id="mallgrid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1" />
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="1200" fill="#080c1a" />
+  <rect width="1600" height="1200" fill="url(#mallgrid)" />
+
+  <!-- Outer Atrium -->
+  <rect x="80" y="80" width="1440" height="1040" rx="20" fill="none" stroke="#a855f7" stroke-width="6" />
+
+  <!-- Stores -->
+  <rect x="120" y="120" width="360" height="400" fill="#13112c" stroke="#a855f7" stroke-width="3" />
+  <text x="300" y="320" fill="#e9d5ff" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Tech &amp; Electronics</text>
+
+  <rect x="1120" y="120" width="360" height="400" fill="#13112c" stroke="#a855f7" stroke-width="3" />
+  <text x="1300" y="320" fill="#e9d5ff" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Fashion Department</text>
+
+  <rect x="120" y="680" width="360" height="400" fill="#13112c" stroke="#a855f7" stroke-width="3" />
+  <text x="300" y="880" fill="#e9d5ff" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Food Court Dining</text>
+
+  <rect x="1120" y="680" width="360" height="400" fill="#13112c" stroke="#a855f7" stroke-width="3" />
+  <text x="1300" y="880" fill="#e9d5ff" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Multiplex Cinema</text>
+
+  <!-- Central Circular Rotunda -->
+  <circle cx="800" cy="600" r="180" fill="#1e1b4b" stroke="#818cf8" stroke-width="4" />
+  <text x="800" y="605" fill="#c7d2fe" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">Central Grand Rotunda</text>
+
+  <text x="800" y="60" fill="#c084fc" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">SHOPPING MALL ARCHITECTURAL LAYOUT</text>
+</svg>

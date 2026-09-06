@@ -1,0 +1,15 @@
+{
+  "name": "indoor-nav-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pluggable Indoor & Venue Navigation Platform with IMDF Standard, PostgreSQL, A* Multi-level Routing, and Floorplan Editor",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix server && npm run build --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
