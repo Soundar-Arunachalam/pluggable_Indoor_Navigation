@@ -3,11 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useVenueStore } from '../../stores/venueStore';
 import { useNavStore } from '../../stores/navStore';
 import { useUIStore } from '../../stores/uiStore';
-import { Compass, Edit3, MapPin, Database, Navigation, Moon, Sun, PlusCircle } from 'lucide-react';
+import { Compass, Edit3, MapPin, Database, Navigation, Moon, Sun, PlusCircle, Move3d } from 'lucide-react';
 
 interface NavbarProps {
-  activeMode: 'visitor' | 'editor';
-  onToggleMode: (mode: 'visitor' | 'editor') => void;
+  activeMode: 'visitor' | 'editor' | 'studio';
+  onToggleMode: (mode: 'visitor' | 'editor' | 'studio') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeMode, onToggleMode }) => {
@@ -21,14 +21,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeMode, onToggleMode }) => {
     if (v) {
       selectVenue(v);
       clearRoute();
-      navigate(activeMode === 'editor' ? `/editor/${v.id}` : `/venue/${v.id}`);
+      if (activeMode === 'studio') navigate(`/studio/${v.id}`);
+      else if (activeMode === 'editor') navigate(`/editor/${v.id}`);
+      else navigate(`/venue/${v.id}`);
     }
   };
 
-  const handleModeToggle = (mode: 'visitor' | 'editor') => {
+  const handleModeToggle = (mode: 'visitor' | 'editor' | 'studio') => {
     onToggleMode(mode);
     if (currentVenue) {
-      navigate(mode === 'editor' ? `/editor/${currentVenue.id}` : `/venue/${currentVenue.id}`);
+      if (mode === 'studio') navigate(`/studio/${currentVenue.id}`);
+      else if (mode === 'editor') navigate(`/editor/${currentVenue.id}`);
+      else navigate(`/venue/${currentVenue.id}`);
     }
   };
 
@@ -49,12 +53,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeMode, onToggleMode }) => {
             <h1 className={`text-base md:text-lg font-bold tracking-tight flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               NavIndoor
               <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-600 text-white">
-                IMDF
+                IMDF 3D
               </span>
             </h1>
           </div>
           <p className={`text-[11px] hidden sm:block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-            Indoor Navigation Platform
+            Indoor Navigation & 3D Studio Platform
           </p>
         </div>
       </div>
@@ -103,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeMode, onToggleMode }) => {
         </div>
       </div>
 
-      {/* Right: Mode Switcher + Dark Mode */}
+      {/* Right: Mode Switcher (Visitor | 2D Editor | 3D Studio) + Dark Mode */}
       <div className="flex items-center gap-2">
         <div className={`flex items-center p-1 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
           <button
@@ -126,7 +130,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeMode, onToggleMode }) => {
               }`}
           >
             <Edit3 className="w-4 h-4" />
-            <span className="hidden sm:inline">Studio</span>
+            <span className="hidden sm:inline">2D Editor</span>
+          </button>
+          <button
+            onClick={() => handleModeToggle('studio')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all duration-150
+              ${activeMode === 'studio'
+                ? 'bg-cyan-600 text-white shadow-sm shadow-cyan-600/30 font-bold'
+                : isDarkMode ? 'text-cyan-400 hover:text-white hover:bg-slate-700' : 'text-cyan-700 hover:text-cyan-900 hover:bg-cyan-100/60'
+              }`}
+          >
+            <Move3d className="w-4 h-4" />
+            <span className="hidden sm:inline">3D Studio</span>
           </button>
         </div>
 

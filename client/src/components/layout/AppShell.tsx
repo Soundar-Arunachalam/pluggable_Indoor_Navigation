@@ -18,10 +18,16 @@ export const AppShell: React.FC = () => {
     fetchVenues();
   }, []);
 
-  const activeMode = location.pathname.startsWith('/editor') ? 'editor' : 'visitor';
+  const activeMode = location.pathname.startsWith('/studio')
+    ? 'studio'
+    : location.pathname.startsWith('/editor')
+      ? 'editor'
+      : 'visitor';
 
-  const handleToggleMode = (mode: 'visitor' | 'editor') => {
-    navigate(mode === 'visitor' ? '/venue' : '/editor');
+  const handleToggleMode = (mode: 'visitor' | 'editor' | 'studio') => {
+    if (mode === 'studio') navigate('/studio');
+    else if (mode === 'editor') navigate('/editor');
+    else navigate('/venue');
   };
 
   if (loading) {

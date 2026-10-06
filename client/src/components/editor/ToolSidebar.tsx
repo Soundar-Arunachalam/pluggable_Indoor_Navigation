@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react';
-import { Level } from '../../types/client';
+import { useNavigate } from 'react-router-dom';
+import { Level, Venue } from '../../types/client';
 import { useUIStore } from '../../stores/uiStore';
+import { useVenueStore } from '../../stores/venueStore';
 import {
   MousePointer, Square, CircleDot, GitBranch, MapPin, Ruler,
   Save, Download, QrCode, Link2, Upload, Undo2, Redo2, Loader2,
-  Layers, Hammer
+  Layers, Hammer, Move3d
 } from 'lucide-react';
 
 export type EditorTool = 'select' | 'room' | 'node' | 'edge' | 'poi' | 'scale';
@@ -34,6 +36,8 @@ export const ToolSidebar: React.FC<ToolSidebarProps> = ({
   isSaving, hasUnsavedChanges, canUndo, canRedo, onUndo, onRedo,
 }) => {
   const { isDarkMode } = useUIStore();
+  const { currentVenue } = useVenueStore();
+  const navigate = useNavigate();
 
   const tools = [
     { id: 'select', label: 'Select & Edit', icon: MousePointer },
@@ -69,7 +73,7 @@ export const ToolSidebar: React.FC<ToolSidebarProps> = ({
     <div className={`w-16 md:w-64 flex flex-col border-r z-20 select-none shadow-sm transition-colors duration-200 overflow-y-auto ${base}`}>
       
       {/* Top Header / Save */}
-      <div className="p-4 border-b border-inherit">
+      <div className="p-4 border-b border-inherit space-y-2">
         <button
           onClick={onSave} disabled={isSaving}
           title="Save to DB (Ctrl+S)"
@@ -82,6 +86,15 @@ export const ToolSidebar: React.FC<ToolSidebarProps> = ({
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           <span className="hidden md:inline">{isSaving ? 'Saving…' : 'Save Changes'}</span>
           {hasUnsavedChanges && !isSaving && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse hidden md:block" />}
+        </button>
+
+        <button
+          onClick={() => navigate(currentVenue ? `/studio/${currentVenue.id}` : '/studio')}
+          title="Open 3D Studio"
+          className="w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center md:justify-start gap-2 transition shadow-sm bg-cyan-600/10 border-cyan-500/30 text-cyan-500 hover:bg-cyan-600 hover:text-white"
+        >
+          <Move3d className="w-4 h-4" />
+          <span className="hidden md:inline">Open 3D Studio</span>
         </button>
       </div>
 
