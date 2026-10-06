@@ -1,142 +1,218 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from '../common/Modal';
-import { Checkpoint, Venue } from '../../types/client';
-import { api } from '../../api/client';
-import { QrCode, MapPin, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Venue, Checkpoint } from '../../types/client';
+import { useNavStore } from '../../stores/navStore';
+import { useVenueStore } from '../../stores/venueStore';
+import { useUIStore } from '../../stores/uiStore';
+import { QrCode, Camera, Keyboard, CheckCircle2, AlertCircle, Loader2, X } from 'lucide-react';
+import { BrowserQRCodeReader } from '@zxing/browser';
 
 interface QRScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   venue: Venue | null;
-  onLocationResolved: (checkpoint: Checkpoint) => void;
+  onLocationResolved: (cp: Checkpoint) => void;
 }
 
-export const QRScannerModal: React.FC<QRScannerModalProps> = ({
-  isOpen,
-  onClose,
-  venue,
-  onLocationResolved
-}) => {
-  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [customCode, setCustomCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+export const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, venue, onLocationResolved }) => {
+  const { resolveCheckpoint } = useNavStore();
+  const { levels } = useVenueStore();
+  const { addToast } = useUIStore();
 
+  const [mode, setMode] = useState<'camera' | 'manual'>('camera');
+  const [manualCode, setManualCode] = useState('');
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState<'pending' | 'granted' | 'denied'>('pending');
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const readerRef = useRef<BrowserQRCodeReader | null>(null);
+  const controlsRef = useRef<any>(null);
+
+  // Start camera scanning when modal opens and mode is camera
   useEffect(() => {
-    if (isOpen && venue) {
-      setLoading(true);
-      setError(null);
-      api.getCheckpoints(venue.id)
-        .then(setCheckpoints)
-        .catch(err => setError(err.message))
-        .finally(() => setLoading(false));
-    }
-  }, [isOpen, venue?.id]);
+    if (!isOpen || mode !== 'camera') return;
+    startCamera();
+    return () => stopCamera();
+  }, [isOpen, mode]);
 
-  const handleSelectCheckpoint = (cp: Checkpoint) => {
-    onLocationResolved(cp);
+  const startCamera = async () => {
+    if (!videoRef.current) return;
+    try {
+      setIsScanning(true);
+      readerRef.current = new BrowserQRCodeReader();
+      const devices = await BrowserQRCodeReader.listVideoInputDevices();
+
+      if (devices.length === 0) {
+        setCameraPermission('denied');
+        setMode('manual');
+        return;
+      }
+
+      setCameraPermission('granted');
+      // Prefer back camera on mobile
+      const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[0];
+
+      controlsRef.current = await readerRef.current.decodeFromVideoDevice(
+        backCamera.deviceId,
+        videoRef.current,
+        (result, error) => {
+          if (result) {
+            const code = result.getText();
+            handleCodeDetected(code);
+          }
+        }
+      );
+    } catch (err: any) {
+      setCameraPermission('denied');
+      setMode('manual');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const stopCamera = () => {
+    try {
+      controlsRef.current?.stop();
+    } catch (_) {}
+    readerRef.current = null;
+    controlsRef.current = null;
+  };
+
+  const handleCodeDetected = async (code: string) => {
+    if (!venue || isResolving) return;
+    stopCamera();
+    setIsResolving(true);
+    setStatus({ type: 'info', msg: `Resolving checkpoint: ${code}` });
+
+    const cp = await resolveCheckpoint(venue.id, code, levels);
+
+    if (cp) {
+      setStatus({ type: 'success', msg: `📍 Located at: ${cp.label}` });
+      onLocationResolved(cp);
+      addToast({ type: 'success', message: `Location set: ${cp.label}` });
+      setTimeout(() => {
+        onClose();
+        setStatus(null);
+      }, 1500);
+    } else {
+      setStatus({ type: 'error', msg: `QR code "${code}" not found in this venue.` });
+      setTimeout(() => startCamera(), 2000);
+    }
+    setIsResolving(false);
+  };
+
+  const handleManualSubmit = () => {
+    if (manualCode.trim()) handleCodeDetected(manualCode.trim().toUpperCase());
+  };
+
+  const handleClose = () => {
+    stopCamera();
+    setStatus(null);
+    setManualCode('');
     onClose();
   };
 
-  const handleScanCode = async (code: string) => {
-    if (!venue || !code.trim()) return;
-    try {
-      setLoading(true);
-      setError(null);
-      const cp = await api.resolveCheckpoint(venue.id, code.trim());
-      onLocationResolved(cp);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'QR code not recognized.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Position Fix & QR Checkpoint"
-      subtitle="Scan a physical QR code plate or select a venue checkpoint to set your position"
-      maxWidth="max-w-md"
-    >
-      <div className="flex flex-col gap-4 text-slate-900">
-        {/* Simulated Camera Viewfinder */}
-        <div className="relative aspect-video rounded-2xl bg-slate-900 border border-slate-300 overflow-hidden flex flex-col items-center justify-center shadow-inner">
-          <div className="w-32 h-32 border-2 border-dashed border-blue-400 rounded-2xl flex flex-col items-center justify-center p-4">
-            <QrCode className="w-14 h-14 text-blue-400/80" />
-          </div>
-
-          <div className="absolute bottom-3 px-3 py-1 rounded-full bg-slate-900/90 text-[11px] text-slate-200 flex items-center gap-1.5 border border-slate-700">
-            <Camera className="w-3.5 h-3.5 text-blue-400" />
-            <span>Scanning Active Checkpoints...</span>
-          </div>
+    <Modal isOpen={isOpen} onClose={handleClose} title="QR Location Scanner" maxWidth="max-w-sm">
+      <div className="flex flex-col gap-4">
+        {/* Mode Tabs */}
+        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <button
+            onClick={() => setMode('camera')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition
+              ${mode === 'camera' ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+          >
+            <Camera className="w-3.5 h-3.5" /> Camera
+          </button>
+          <button
+            onClick={() => { stopCamera(); setMode('manual'); }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition
+              ${mode === 'manual' ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+          >
+            <Keyboard className="w-3.5 h-3.5" /> Manual
+          </button>
         </div>
 
-        {/* Error message */}
-        {error && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{error}</span>
+        {/* Camera View */}
+        {mode === 'camera' && (
+          <div className="relative bg-slate-900 rounded-2xl overflow-hidden aspect-square">
+            <video ref={videoRef} className="w-full h-full object-cover" muted autoPlay playsInline />
+
+            {/* Scanning frame overlay */}
+            {cameraPermission !== 'denied' && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-48 h-48 border-2 border-blue-400 rounded-xl opacity-70">
+                  <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-500 rounded-tl-xl" />
+                  <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-500 rounded-tr-xl" />
+                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-500 rounded-bl-xl" />
+                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-500 rounded-br-xl" />
+                </div>
+                <div className="absolute bottom-4 px-3 py-1.5 bg-black/60 rounded-xl">
+                  <p className="text-white text-xs font-semibold">Point at a QR checkpoint code</p>
+                </div>
+              </div>
+            )}
+
+            {/* Camera denied fallback */}
+            {cameraPermission === 'denied' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900">
+                <Camera className="w-10 h-10 text-slate-500" />
+                <p className="text-slate-400 text-xs text-center px-4">Camera access denied. Use manual code entry.</p>
+              </div>
+            )}
+
+            {isScanning && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Checkpoint Quick Selector */}
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-            Select Known Checkpoint
-          </h4>
-          
-          {loading ? (
-            <div className="py-4 text-center text-xs text-slate-400">Loading checkpoints...</div>
-          ) : (
-            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
-              {checkpoints.map((cp) => (
-                <button
-                  key={cp.id}
-                  onClick={() => handleSelectCheckpoint(cp)}
-                  className="p-3 rounded-xl bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 transition flex items-center justify-between text-left group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-100/70 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition">
-                      <MapPin className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-900 group-hover:text-blue-900 transition">
-                        {cp.label}
-                      </h5>
-                      <p className="text-[11px] text-slate-500">
-                        {cp.description || `Floor: ${cp.level_name || 'Ground'}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="px-2 py-1 rounded bg-slate-200/60 text-[10px] font-mono text-slate-700">
-                    {cp.code}
-                  </span>
-                </button>
-              ))}
+        {/* Manual Input */}
+        {mode === 'manual' && (
+          <div className="flex flex-col gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex items-center justify-center mx-auto">
+              <QrCode className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
-          )}
-        </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+              Enter the checkpoint code printed on the QR placard
+            </p>
+            <input
+              type="text"
+              value={manualCode}
+              onChange={e => setManualCode(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === 'Enter' && handleManualSubmit()}
+              placeholder="e.g. ENTRANCE-A, LIFT-F2"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              autoFocus
+            />
+            <button
+              onClick={handleManualSubmit}
+              disabled={!manualCode.trim() || isResolving}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-sm transition"
+            >
+              {isResolving ? 'Locating…' : 'Set My Location'}
+            </button>
+          </div>
+        )}
 
-        {/* Manual Code Input */}
-        <div className="pt-3 border-t border-slate-200 flex gap-2">
-          <input
-            type="text"
-            placeholder="Or enter code (e.g. QR-METRO-L1-ENTRANCE)"
-            value={customCode}
-            onChange={(e) => setCustomCode(e.target.value)}
-            className="flex-1 bg-slate-50 text-xs px-3 py-2 rounded-xl border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600"
-          />
-          <button
-            onClick={() => handleScanCode(customCode)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-sm"
+        {/* Status */}
+        {status && (
+          <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-xs font-semibold
+            ${status.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300' :
+              status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300' :
+              'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300'
+            }`}
           >
-            Locate
-          </button>
-        </div>
+            {status.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> :
+             status.type === 'error' ? <AlertCircle className="w-4 h-4 shrink-0" /> :
+             <Loader2 className="w-4 h-4 shrink-0 animate-spin" />}
+            {status.msg}
+          </div>
+        )}
       </div>
     </Modal>
   );

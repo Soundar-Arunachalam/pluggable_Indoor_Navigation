@@ -10,6 +10,17 @@ export const api = {
     return data.data;
   },
 
+  async createVenue(payload: { name: string; description?: string; category: string; levels?: any[] }): Promise<Venue> {
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed to create venue');
+    return data.data;
+  },
+
   async getVenueDetails(venueId: string): Promise<{ venue: Venue; levels: Level[]; stats: any }> {
     const res = await fetch(`${API_BASE}/${venueId}`);
     const data = await res.json();

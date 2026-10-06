@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class RoutingService {
   private static graphCache = new Map<string, { graph: NavigationGraph; timestamp: number }>();
-  private static CACHE_TTL = 30000; // 30 seconds
+  private static CACHE_TTL = 300000; // 5 minutes
 
   static async getGraph(db: DBClient, venueId: string): Promise<NavigationGraph> {
     const cached = this.graphCache.get(venueId);

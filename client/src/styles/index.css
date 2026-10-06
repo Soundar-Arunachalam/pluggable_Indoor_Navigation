@@ -12,6 +12,11 @@
     -webkit-user-select: none;
     touch-action: manipulation;
   }
+  
+  html.dark body {
+    background-color: #020617; /* slate-950 */
+    color: #f1f5f9; /* slate-100 */
+  }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', system-ui, sans-serif;
@@ -19,52 +24,41 @@
   }
 }
 
-/* Professional Card & Panel UI */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
-}
-
-.glass-panel-interactive {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05);
-  transition: all 0.15s ease-in-out;
-}
-
-.glass-panel-interactive:hover {
-  background: #f8fafc;
-  border-color: #2563eb;
-  box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.1);
-}
-
 /* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+html.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Hide scrollbar completely but allow scrolling */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
 /* Marching Route Stroke Animation */
 @keyframes routePulse {
-  0% {
-    stroke-dashoffset: 40;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
+  0% { stroke-dashoffset: 40; }
+  100% { stroke-dashoffset: 0; }
 }
 
 .animate-route-dash {
@@ -73,14 +67,8 @@
 
 /* Radar pulse for checkpoint / user location */
 @keyframes radarSpread {
-  0% {
-    r: 10;
-    opacity: 0.7;
-  }
-  100% {
-    r: 32;
-    opacity: 0;
-  }
+  0% { r: 10; opacity: 0.7; }
+  100% { r: 32; opacity: 0; }
 }
 
 .radar-circle {

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useEditorStore } from '../../stores/editorStore';
 import { Level, LevelMapData, POI } from '../../types/client';
-import { EditorTool } from './Toolbar';
+import { EditorTool } from './ToolSidebar';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -37,7 +38,7 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
   // Tracing states
   const [currentPolygonPoints, setCurrentPolygonPoints] = useState<[number, number][]>([]);
   const [edgeStartNodeId, setEdgeStartNodeId] = useState<string | null>(null);
-  const [selectedElement, setSelectedElement] = useState<{ type: 'unit' | 'node' | 'edge' | 'poi'; id: string; data: any } | null>(null);
+  const { selectedElement, setSelectedElement } = useEditorStore();
   const [scaleMeasurePoints, setScaleMeasurePoints] = useState<[number, number][]>([]);
   const [isScaleModalOpen, setIsScaleModalOpen] = useState(false);
   const [realWorldMetersInput, setRealWorldMetersInput] = useState('10');
@@ -247,44 +248,6 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
     }
   };
 
-  // Delete selected element
-  const handleDeleteSelected = () => {
-    if (!selectedElement || !levelMap) return;
-    const { type, id } = selectedElement;
-
-    let updated = { ...levelMap };
-    if (type === 'unit') {
-      updated.units = {
-        ...updated.units,
-        features: updated.units.features.filter(u => u.id !== id)
-      };
-    } else if (type === 'node') {
-      updated.nodes = {
-        ...updated.nodes,
-        features: updated.nodes.features.filter(n => n.id !== id)
-      };
-      // remove associated edges
-      updated.edges = {
-        ...updated.edges,
-        features: updated.edges.features.filter(
-          e => e.properties.from_node_id !== id && e.properties.to_node_id !== id
-        )
-      };
-    } else if (type === 'edge') {
-      updated.edges = {
-        ...updated.edges,
-        features: updated.edges.features.filter(e => e.id !== id)
-      };
-    } else if (type === 'poi') {
-      updated.pois = {
-        ...updated.pois,
-        features: updated.pois.features.filter(p => p.id !== id)
-      };
-    }
-
-    onMapUpdated(updated);
-    setSelectedElement(null);
-  };
 
   // Mouse pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -561,81 +524,6 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
         ))}
       </svg>
 
-      {/* Selected Element Property Inspector Sidebar */}
-      {selectedElement && (
-        <div className="absolute right-4 top-4 z-30 w-80 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xl text-slate-900 animate-in slide-in-from-right-4 duration-150">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-              {selectedElement.type} Properties
-            </h4>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleDeleteSelected}
-                className="p-1 rounded-lg text-rose-500 hover:bg-rose-50 transition"
-                title="Delete item"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setSelectedElement(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-col gap-3 text-xs">
-            <div>
-              <label className="text-slate-500 font-semibold block mb-1">Name / Label</label>
-              <input
-                type="text"
-                value={selectedElement.data.name || ''}
-                onChange={(e) => {
-                  const updatedVal = e.target.value;
-                  setSelectedElement(prev => prev ? { ...prev, data: { ...prev.data, name: updatedVal } } : null);
-                  // Update in map
-                  if (levelMap) {
-                    if (selectedElement.type === 'unit') {
-                      levelMap.units.features.find(u => u.id === selectedElement.id)!.properties.name = updatedVal;
-                    } else if (selectedElement.type === 'node') {
-                      levelMap.nodes.features.find(n => n.id === selectedElement.id)!.properties.name = updatedVal;
-                    } else if (selectedElement.type === 'poi') {
-                      levelMap.pois.features.find(p => p.id === selectedElement.id)!.properties.name = updatedVal;
-                    }
-                    onMapUpdated({ ...levelMap });
-                  }
-                }}
-                className="w-full bg-slate-50 px-3 py-2 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
-              />
-            </div>
-
-            {selectedElement.type === 'unit' && (
-              <div>
-                <label className="text-slate-500 font-semibold block mb-1">Category</label>
-                <select
-                  value={selectedElement.data.category || 'room'}
-                  onChange={(e) => {
-                    const cat = e.target.value;
-                    setSelectedElement(prev => prev ? { ...prev, data: { ...prev.data, category: cat } } : null);
-                    levelMap!.units.features.find(u => u.id === selectedElement.id)!.properties.category = cat;
-                    onMapUpdated({ ...levelMap! });
-                  }}
-                  className="w-full bg-slate-50 px-3 py-2 rounded-xl border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
-                >
-                  <option value="room">Room / Office</option>
-                  <option value="hallway">Hallway / Corridor</option>
-                  <option value="restroom">Restroom</option>
-                  <option value="clinic">Clinic / Medical</option>
-                  <option value="food">Cafe / Dining</option>
-                  <option value="elevator">Elevator Core</option>
-                  <option value="stairs">Stairwell</option>
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Editor Bottom Status & Help Overlay */}
       <div className="absolute bottom-4 left-4 z-20 bg-white/90 backdrop-blur px-4 py-2 rounded-xl border border-slate-200 shadow-md text-xs text-slate-600 flex items-center gap-3">

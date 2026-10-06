@@ -1,14 +1,8 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Level, LevelMapData, POI, RouteResponse, Checkpoint } from '../../types/client';
-import { 
-  ZoomIn, 
-  ZoomOut, 
-  Maximize2, 
-  MapPin, 
-  Navigation, 
-  Layers, 
-  Accessibility,
-  ArrowRight
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Level, LevelMapData, POI, RouteResponse } from '../../types/client';
+import { useUIStore } from '../../stores/uiStore';
+import {
+  ZoomIn, ZoomOut, Maximize2, Navigation, Accessibility, ArrowRight, Layers
 } from 'lucide-react';
 
 interface IndoorMapViewerProps {
@@ -17,9 +11,8 @@ interface IndoorMapViewerProps {
   route: RouteResponse | null;
   userLocation: { x: number; y: number; levelId: string; label?: string } | null;
   selectedPOI: POI | null;
-  onSelectPOI: (poi: POI) => void;
+  onSelectPOI: (poi: POI | null) => void;
   onQuickNavigateToPOI: (poi: POI) => void;
-  onMapClickPosition?: (coords: { x: number; y: number; levelId: string }) => void;
 }
 
 export const IndoorMapViewer: React.FC<IndoorMapViewerProps> = ({
@@ -30,115 +23,164 @@ export const IndoorMapViewer: React.FC<IndoorMapViewerProps> = ({
   selectedPOI,
   onSelectPOI,
   onQuickNavigateToPOI,
-  onMapClickPosition
 }) => {
+  const { isDarkMode } = useUIStore();
   const containerRef = useRef<HTMLDivElement>(null);
+
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredUnit, setHoveredUnit] = useState<any | null>(null);
 
-  // Map scale and dimensions in meters
+  // Touch state
+  const touchStartRef = useRef<{ x: number; y: number; dist: number } | null>(null);
+  const lastPanRef = useRef({ x: 0, y: 0 });
+  const lastZoomRef = useRef(1);
+
   const widthMeters = activeLevel?.width_meters || 80;
   const heightMeters = activeLevel?.height_meters || 60;
   const scale = activeLevel?.scale_pixels_per_meter || 20;
-
   const svgWidth = widthMeters * scale;
   const svgHeight = heightMeters * scale;
 
-  // Reset pan/zoom on level switch
+  // Reset view on level change
   useEffect(() => {
     if (containerRef.current) {
-      const containerWidth = containerRef.current.clientWidth;
-      const containerHeight = containerRef.current.clientHeight;
-      const scaleX = (containerWidth * 0.88) / svgWidth;
-      const scaleY = (containerHeight * 0.88) / svgHeight;
-      const initialZoom = Math.min(scaleX, scaleY, 1.2);
-      
-      setZoom(initialZoom);
-      setPan({
-        x: (containerWidth - svgWidth * initialZoom) / 2,
-        y: (containerHeight - svgHeight * initialZoom) / 2
-      });
+      const cw = containerRef.current.clientWidth;
+      const ch = containerRef.current.clientHeight;
+      const initZoom = Math.min((cw * 0.88) / svgWidth, (ch * 0.88) / svgHeight, 1.2);
+      setZoom(initZoom);
+      setPan({ x: (cw - svgWidth * initZoom) / 2, y: (ch - svgHeight * initZoom) / 2 });
     }
   }, [activeLevel?.id, svgWidth, svgHeight]);
 
-  // Mouse pan handlers
+  // ── Mouse handlers ──────────────────────────────────────────────────────────
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
-
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
-    });
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
+  const handleMouseUp = () => setIsDragging(false);
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  // Zoom handlers
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.min(Math.max(zoom * zoomFactor, 0.4), 4.0);
-
+    const factor = e.deltaY < 0 ? 1.15 : 0.85;
+    const newZoom = Math.min(Math.max(zoom * factor, 0.3), 5.0);
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      setPan({
-        x: mouseX - (mouseX - pan.x) * (newZoom / zoom),
-        y: mouseY - (mouseY - pan.y) * (newZoom / zoom)
-      });
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      setPan({ x: mx - (mx - pan.x) * (newZoom / zoom), y: my - (my - pan.y) * (newZoom / zoom) });
     }
     setZoom(newZoom);
+  }, [zoom, pan]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [handleWheel]);
+
+  // ── Touch handlers (pinch-to-zoom + pan) ────────────────────────────────────
+  const getTouchDist = (t: React.TouchList) => {
+    if (t.length < 2) return 0;
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   };
 
-  const handleZoomIn = () => setZoom(z => Math.min(z * 1.25, 4.0));
-  const handleZoomOut = () => setZoom(z => Math.max(z * 0.8, 0.4));
-  const handleFit = () => {
-    if (containerRef.current) {
-      const containerWidth = containerRef.current.clientWidth;
-      const containerHeight = containerRef.current.clientHeight;
-      const scaleX = (containerWidth * 0.88) / svgWidth;
-      const scaleY = (containerHeight * 0.88) / svgHeight;
-      const fitZoom = Math.min(scaleX, scaleY, 1.2);
-      setZoom(fitZoom);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartRef.current = { x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y, dist: 0 };
+    } else if (e.touches.length === 2) {
+      touchStartRef.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - pan.x,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - pan.y,
+        dist: getTouchDist(e.touches),
+      };
+    }
+    lastPanRef.current = pan;
+    lastZoomRef.current = zoom;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (!touchStartRef.current) return;
+
+    if (e.touches.length === 1) {
       setPan({
-        x: (containerWidth - svgWidth * fitZoom) / 2,
-        y: (containerHeight - svgHeight * fitZoom) / 2
+        x: e.touches[0].clientX - touchStartRef.current.x,
+        y: e.touches[0].clientY - touchStartRef.current.y,
       });
+    } else if (e.touches.length === 2) {
+      const dist = getTouchDist(e.touches);
+      if (touchStartRef.current.dist === 0) return;
+      const newZoom = Math.min(Math.max(lastZoomRef.current * (dist / touchStartRef.current.dist), 0.3), 5.0);
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rect = containerRef.current!.getBoundingClientRect();
+      const mx = midX - rect.left;
+      const my = midY - rect.top;
+      setPan({
+        x: mx - (mx - lastPanRef.current.x) * (newZoom / lastZoomRef.current),
+        y: my - (my - lastPanRef.current.y) * (newZoom / lastZoomRef.current),
+      });
+      setZoom(newZoom);
     }
   };
 
-  // Map route coordinates for the current floor
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+  };
+
+  // ── Zoom controls ────────────────────────────────────────────────────────────
+  const handleZoomIn = () => setZoom(z => Math.min(z * 1.25, 5.0));
+  const handleZoomOut = () => setZoom(z => Math.max(z * 0.8, 0.3));
+  const handleFit = () => {
+    if (!containerRef.current) return;
+    const cw = containerRef.current.clientWidth;
+    const ch = containerRef.current.clientHeight;
+    const fit = Math.min((cw * 0.88) / svgWidth, (ch * 0.88) / svgHeight, 1.2);
+    setZoom(fit);
+    setPan({ x: (cw - svgWidth * fit) / 2, y: (ch - svgHeight * fit) / 2 });
+  };
+
+  // ── Route geometry for active level ─────────────────────────────────────────
   const activeLevelRouteCoords = useMemo(() => {
-    if (!route || !activeLevel || !route.geometryByLevel[activeLevel.id]) {
-      return null;
-    }
-    const levelGeom = route.geometryByLevel[activeLevel.id];
-    if (!levelGeom.coordinates || !Array.isArray(levelGeom.coordinates)) return null;
-    return levelGeom.coordinates
+    if (!route || !activeLevel || !route.geometryByLevel[activeLevel.id]) return null;
+    const geom = route.geometryByLevel[activeLevel.id];
+    if (!geom.coordinates || !Array.isArray(geom.coordinates)) return null;
+    return geom.coordinates
       .filter(([x, y]) => typeof x === 'number' && typeof y === 'number')
       .map(([x, y]) => `${x * scale},${y * scale}`)
       .join(' ');
   }, [route, activeLevel?.id, scale]);
 
-  // Find transition points (e.g. elevators or stairs to switch floor)
   const levelTransitions = useMemo(() => {
     if (!route || !activeLevel) return [];
-    return route.steps.filter(
-      s => s.isLevelTransition && (s.fromLevelId === activeLevel.id || s.toLevelId === activeLevel.id)
-    );
+    return route.steps.filter(s => s.isLevelTransition && (s.fromLevelId === activeLevel.id || s.toLevelId === activeLevel.id));
   }, [route, activeLevel?.id]);
+
+  // ── Color tokens ─────────────────────────────────────────────────────────────
+  const BG = isDarkMode ? '#0f172a' : '#f8fafc';
+  const FLOOR_FILL = isDarkMode ? '#1e293b' : '#ffffff';
+  const FLOOR_STROKE = isDarkMode ? '#334155' : '#cbd5e1';
+  const UNIT_DEFAULT = isDarkMode ? '#1e293b' : '#f8fafc';
+  const UNIT_HOVERED = isDarkMode ? '#1d3461' : '#eff6ff';
+  const UNIT_SELECTED = isDarkMode ? '#1e3a8a' : '#dbeafe';
+  const UNIT_STROKE_DEFAULT = isDarkMode ? '#475569' : '#94a3b8';
+  const UNIT_STROKE_HOVERED = isDarkMode ? '#60a5fa' : '#3b82f6';
+  const UNIT_STROKE_SELECTED = isDarkMode ? '#3b82f6' : '#2563eb';
+  const LABEL_COLOR = isDarkMode ? '#cbd5e1' : '#334155';
+  const LABEL_SELECTED = isDarkMode ? '#93c5fd' : '#1d4ed8';
+  const EDGE_COLOR = isDarkMode ? '#334155' : '#cbd5e1';
+  const TOOLTIP_BG = isDarkMode ? '#1e293b' : '#0f172a';
 
   return (
     <div
@@ -147,158 +189,99 @@ export const IndoorMapViewer: React.FC<IndoorMapViewerProps> = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
-      className="relative w-full h-full bg-slate-100 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full h-full overflow-hidden cursor-grab active:cursor-grabbing select-none touch-none"
+      style={{ background: BG }}
     >
-      {/* Clean Architectural Grid Pattern */}
-      <div 
-        className="absolute inset-0 opacity-[0.4] pointer-events-none"
+      {/* Subtle grid pattern */}
+      <div
+        className="absolute inset-0 opacity-[0.35] pointer-events-none"
         style={{
-          backgroundImage: `linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)`,
-          backgroundSize: '32px 32px'
+          backgroundImage: `linear-gradient(${isDarkMode ? '#1e293b' : '#e2e8f0'} 1px, transparent 1px),
+                            linear-gradient(90deg, ${isDarkMode ? '#1e293b' : '#e2e8f0'} 1px, transparent 1px)`,
+          backgroundSize: '32px 32px',
         }}
       />
 
-      {/* Main SVG Vector Canvas */}
+      {/* Main SVG Canvas */}
       <svg
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: '0 0',
-          transition: isDragging ? 'none' : 'transform 0.05s ease-out',
+          transition: isDragging ? 'none' : 'transform 0.04s ease-out',
           width: svgWidth,
-          height: svgHeight
+          height: svgHeight,
         }}
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         className="absolute top-0 left-0"
       >
         <defs>
-          {/* Subtle Route Drop Shadow */}
-          <filter id="routeShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          <filter id="shadow-soft" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="8" floodColor={isDarkMode ? '#000' : '#0f172a'} floodOpacity="0.08" />
           </filter>
         </defs>
 
-        {/* 1. Floor Base Boundary (Crisp White with Soft Border) */}
-        <rect
-          x="0"
-          y="0"
-          width={svgWidth}
-          height={svgHeight}
-          rx="12"
-          fill="#ffffff"
-          stroke="#cbd5e1"
-          strokeWidth="2"
-          filter="drop-shadow(0 4px 12px rgba(15,23,42,0.06))"
-        />
+        {/* Floor base */}
+        <rect x="0" y="0" width={svgWidth} height={svgHeight} rx="12"
+          fill={FLOOR_FILL} stroke={FLOOR_STROKE} strokeWidth="2" filter="url(#shadow-soft)" />
 
-        {/* 2. Units / Rooms (Polygons & MultiPolygons) */}
+        {/* Units (rooms) */}
         {levelMap?.units.features.map((unit) => {
-          const isSelected = selectedPOI?.id === unit.id;
-          const isHovered = hoveredUnit?.id === unit.id;
-
+          const isSel = selectedPOI?.id === unit.id;
+          const isHov = hoveredUnit?.id === unit.id;
           const geom = unit.geometry;
-          if (!geom || !geom.coordinates) return null;
+          if (!geom?.coordinates) return null;
 
           const rings: string[] = [];
-          let totalX = 0, totalY = 0, ptCount = 0;
+          let tx = 0, ty = 0, pc = 0;
 
-          if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
-            const outer = geom.coordinates[0];
-            if (Array.isArray(outer)) {
-              const pts: string[] = [];
-              for (const pt of outer) {
-                if (Array.isArray(pt) && typeof pt[0] === 'number' && typeof pt[1] === 'number') {
-                  pts.push(`${pt[0] * scale},${pt[1] * scale}`);
-                  totalX += pt[0];
-                  totalY += pt[1];
-                  ptCount++;
-                }
-              }
-              if (pts.length > 0) rings.push(pts.join(' '));
-            }
-          } else if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
-            for (const poly of geom.coordinates) {
-              if (Array.isArray(poly) && Array.isArray(poly[0])) {
-                const pts: string[] = [];
-                for (const pt of poly[0]) {
-                  if (Array.isArray(pt) && typeof pt[0] === 'number' && typeof pt[1] === 'number') {
-                    pts.push(`${pt[0] * scale},${pt[1] * scale}`);
-                    totalX += pt[0];
-                    totalY += pt[1];
-                    ptCount++;
-                  }
-                }
-                if (pts.length > 0) rings.push(pts.join(' '));
+          const processRing = (outer: any[]) => {
+            const pts: string[] = [];
+            for (const pt of outer) {
+              if (Array.isArray(pt) && typeof pt[0] === 'number') {
+                pts.push(`${pt[0] * scale},${pt[1] * scale}`);
+                tx += pt[0]; ty += pt[1]; pc++;
               }
             }
-          }
+            if (pts.length) rings.push(pts.join(' '));
+          };
 
-          const centroidX = ptCount > 0 ? (totalX / ptCount) * scale : null;
-          const centroidY = ptCount > 0 ? (totalY / ptCount) * scale : null;
+          if (geom.type === 'Polygon') processRing(geom.coordinates[0]);
+          else if (geom.type === 'MultiPolygon') geom.coordinates.forEach((poly: any) => processRing(poly[0]));
 
-          // Clean architectural fill colors
-          const fillColor = isSelected
-            ? '#dbeafe'
-            : isHovered
-            ? '#eff6ff'
-            : unit.properties.color || '#f8fafc';
-
-          const strokeColor = isSelected
-            ? '#2563eb'
-            : isHovered
-            ? '#3b82f6'
-            : '#94a3b8';
+          const cx = pc > 0 ? (tx / pc) * scale : null;
+          const cy = pc > 0 ? (ty / pc) * scale : null;
+          const fill = isSel ? UNIT_SELECTED : isHov ? UNIT_HOVERED : (unit.properties.color || UNIT_DEFAULT);
+          const stroke = isSel ? UNIT_STROKE_SELECTED : isHov ? UNIT_STROKE_HOVERED : UNIT_STROKE_DEFAULT;
 
           return (
-            <g
-              key={unit.id}
-              className="cursor-pointer transition-all duration-150"
+            <g key={unit.id} className="cursor-pointer"
               onMouseEnter={() => setHoveredUnit(unit)}
               onMouseLeave={() => setHoveredUnit(null)}
               onClick={(e) => {
                 e.stopPropagation();
-                const matchingPoi = levelMap.pois.features.find(p => p.properties.name === unit.properties.name);
-                if (matchingPoi) {
-                  onSelectPOI({
-                    id: matchingPoi.id,
-                    venue_id: activeLevel?.venue_id || '',
-                    level_id: activeLevel?.id || '',
-                    name: matchingPoi.properties.name,
-                    category: matchingPoi.properties.category,
-                    is_accessible: matchingPoi.properties.is_accessible,
-                    icon: matchingPoi.properties.icon,
-                    x_meters: matchingPoi.geometry.coordinates[0],
-                    y_meters: matchingPoi.geometry.coordinates[1],
-                    description: matchingPoi.properties.description
-                  });
-                }
+                const match = levelMap.pois.features.find(p => p.properties.name === unit.properties.name);
+                if (match) onSelectPOI({
+                  id: match.id, venue_id: activeLevel?.venue_id || '',
+                  level_id: activeLevel?.id || '', name: match.properties.name,
+                  category: match.properties.category, is_accessible: match.properties.is_accessible,
+                  icon: match.properties.icon, x_meters: match.geometry.coordinates[0],
+                  y_meters: match.geometry.coordinates[1], description: match.properties.description,
+                });
               }}
             >
-              {/* Unit Polygon Rings */}
-              {rings.map((pointsStr, rIdx) => (
-                <polygon
-                  key={rIdx}
-                  points={pointsStr}
-                  fill={fillColor}
-                  stroke={strokeColor}
-                  strokeWidth={isSelected ? '2.5' : isHovered ? '2' : '1.25'}
-                  className="transition-colors duration-150"
-                />
+              {rings.map((pts, i) => (
+                <polygon key={i} points={pts} fill={fill} stroke={stroke}
+                  strokeWidth={isSel ? '2.5' : isHov ? '2' : '1.25'}
+                  style={{ transition: 'fill 0.12s, stroke 0.12s' }} />
               ))}
-
-              {/* Room Label at Centroid */}
-              {centroidX !== null && centroidY !== null && unit.properties.name && (
-                <text
-                  x={centroidX}
-                  y={centroidY}
-                  fill={isSelected ? '#1d4ed8' : '#334155'}
-                  fontSize={Math.max(10, Math.min(12, 13 / zoom))}
-                  fontWeight="600"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  className="pointer-events-none select-none font-sans"
-                >
+              {cx !== null && cy !== null && unit.properties.name && (
+                <text x={cx} y={cy} fill={isSel ? LABEL_SELECTED : LABEL_COLOR}
+                  fontSize={Math.max(9, Math.min(12, 13 / zoom))} fontWeight="600"
+                  textAnchor="middle" dominantBaseline="middle"
+                  className="pointer-events-none select-none">
                   {unit.properties.name}
                 </text>
               )}
@@ -306,291 +289,154 @@ export const IndoorMapViewer: React.FC<IndoorMapViewerProps> = ({
           );
         })}
 
-        {/* 3. Walkway Hallway Network */}
+        {/* Walkway network */}
         {levelMap?.edges.features.map((edge) => {
           const coords = edge.geometry?.coordinates;
-          if (!Array.isArray(coords) || coords.length < 2 || !coords[0] || !coords[1]) return null;
+          if (!Array.isArray(coords) || coords.length < 2) return null;
+          if (edge.properties?.is_vertical) return null;
           const [p1, p2] = coords;
-          const isVertical = edge.properties?.is_vertical;
-          if (isVertical) return null;
-
           return (
-            <line
-              key={edge.id}
-              x1={p1[0] * scale}
-              y1={p1[1] * scale}
-              x2={p2[0] * scale}
-              y2={p2[1] * scale}
-              stroke="#cbd5e1"
-              strokeWidth="1.5"
-              strokeDasharray="4 4"
-            />
+            <line key={edge.id}
+              x1={p1[0] * scale} y1={p1[1] * scale}
+              x2={p2[0] * scale} y2={p2[1] * scale}
+              stroke={EDGE_COLOR} strokeWidth="1.5" strokeDasharray="4 4" />
           );
         })}
 
-        {/* 4. Active Turn-by-Turn Route Polyline (High-Contrast Royal Blue) */}
+        {/* Active route */}
         {activeLevelRouteCoords && (
           <g>
-            {/* Outer Blue Halo */}
-            <polyline
-              points={activeLevelRouteCoords}
-              fill="none"
-              stroke="#93c5fd"
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeOpacity="0.6"
-            />
-
-            {/* Core Solid Blue Route Line */}
-            <polyline
-              points={activeLevelRouteCoords}
-              fill="none"
-              stroke="#2563eb"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-
-            {/* Moving White Direction Dashes */}
-            <polyline
-              points={activeLevelRouteCoords}
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="8 8"
-              className="animate-route-dash"
-            />
+            <polyline points={activeLevelRouteCoords} fill="none" stroke="#93c5fd"
+              strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.4" />
+            <polyline points={activeLevelRouteCoords} fill="none" stroke="#2563eb"
+              strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points={activeLevelRouteCoords} fill="none" stroke="#ffffff"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              strokeDasharray="8 8" className="animate-route-dash" />
           </g>
         )}
 
-        {/* 5. Points of Interest (POIs) Markers */}
+        {/* POI markers */}
         {levelMap?.pois.features.map((poi) => {
           const [px, py] = poi.geometry.coordinates;
-          const isSelected = selectedPOI?.id === poi.id;
-          const isAccessible = poi.properties.is_accessible;
-
+          const isSel = selectedPOI?.id === poi.id;
           return (
-            <g
-              key={poi.id}
-              transform={`translate(${px * scale}, ${py * scale})`}
+            <g key={poi.id} transform={`translate(${px * scale},${py * scale})`}
               className="cursor-pointer group"
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectPOI({
-                  id: poi.id,
-                  venue_id: activeLevel?.venue_id || '',
-                  level_id: activeLevel?.id || '',
-                  name: poi.properties.name,
-                  category: poi.properties.category,
-                  is_accessible: poi.properties.is_accessible,
-                  icon: poi.properties.icon,
-                  x_meters: px,
-                  y_meters: py,
-                  description: poi.properties.description
-                });
+                onSelectPOI({ id: poi.id, venue_id: activeLevel?.venue_id || '',
+                  level_id: activeLevel?.id || '', name: poi.properties.name,
+                  category: poi.properties.category, is_accessible: poi.properties.is_accessible,
+                  icon: poi.properties.icon, x_meters: px, y_meters: py,
+                  description: poi.properties.description });
               }}
             >
-              {/* Outer halo */}
-              <circle
-                r={isSelected ? '14' : '9'}
-                fill={isSelected ? '#2563eb' : '#3b82f6'}
-                fillOpacity={isSelected ? '0.2' : '0.1'}
-                className="group-hover:scale-125 transition-transform duration-150"
-              />
-
-              {/* Pin Base */}
-              <circle
-                r={isSelected ? '7' : '5'}
-                fill={isSelected ? '#2563eb' : '#ffffff'}
-                stroke={isSelected ? '#ffffff' : isAccessible ? '#16a34a' : '#2563eb'}
-                strokeWidth="2"
-                filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))"
-              />
-
-              {/* Accessible green dot */}
-              {isAccessible && !isSelected && (
-                <circle
-                  cx="3.5"
-                  cy="-3.5"
-                  r="2"
-                  fill="#16a34a"
-                />
+              <circle r={isSel ? '14' : '10'} fill={isSel ? '#2563eb' : '#3b82f6'}
+                fillOpacity={isSel ? '0.2' : '0.12'}
+                style={{ transition: 'r 0.15s, fill-opacity 0.15s' }} />
+              <circle r={isSel ? '7' : '5.5'} fill={isSel ? '#2563eb' : '#ffffff'}
+                stroke={isSel ? '#ffffff' : poi.properties.is_accessible ? '#16a34a' : '#2563eb'}
+                strokeWidth="2.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.2))"
+                style={{ transition: 'r 0.15s' }} />
+              {poi.properties.is_accessible && !isSel && (
+                <circle cx="4" cy="-4" r="2.5" fill="#16a34a" />
               )}
-
-              {/* Hover Tooltip */}
-              <g
-                transform="translate(0, -18)"
-                className={`${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity duration-150 pointer-events-none`}
-              >
-                <rect
-                  x="-45"
-                  y="-11"
-                  width="90"
-                  height="20"
-                  rx="6"
-                  fill="#0f172a"
-                  filter="drop-shadow(0 4px 6px rgba(0,0,0,0.2))"
-                />
-                <text
-                  x="0"
-                  y="2"
-                  fill="#ffffff"
-                  fontSize="9.5"
-                  fontWeight="600"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                >
-                  {poi.properties.name.length > 14 ? `${poi.properties.name.substring(0, 12)}...` : poi.properties.name}
+              {/* Tooltip */}
+              <g transform="translate(0,-20)"
+                className={`${isSel ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity duration-150 pointer-events-none`}>
+                <rect x="-48" y="-12" width="96" height="21" rx="6" fill={TOOLTIP_BG}
+                  filter="drop-shadow(0 3px 6px rgba(0,0,0,0.25))" />
+                <text x="0" y="2" fill="#ffffff" fontSize="9.5" fontWeight="700"
+                  textAnchor="middle" dominantBaseline="middle">
+                  {poi.properties.name.length > 15 ? `${poi.properties.name.slice(0, 13)}…` : poi.properties.name}
                 </text>
               </g>
             </g>
           );
         })}
 
-        {/* 6. Level Transition Badges (Elevator / Stairs) */}
-        {levelTransitions.map((t, idx) => {
-          const pt = t.startPoint;
-          return (
-            <g
-              key={`trans-${idx}`}
-              transform={`translate(${pt.x * scale}, ${pt.y * scale})`}
-              className="pointer-events-none"
-            >
-              <rect
-                x="-36"
-                y="-26"
-                width="72"
-                height="20"
-                rx="6"
-                fill="#2563eb"
-                stroke="#ffffff"
-                strokeWidth="1.5"
-                filter="drop-shadow(0 2px 6px rgba(37,99,235,0.3))"
-              />
-              <text
-                x="0"
-                y="-14"
-                fill="#ffffff"
-                fontSize="9"
-                fontWeight="700"
-                textAnchor="middle"
-                dominantBaseline="middle"
-              >
-                {t.direction.includes('elevator') ? 'Elevator' : 'Stairs'}
-              </text>
-            </g>
-          );
-        })}
+        {/* Level transition badges */}
+        {levelTransitions.map((t, i) => (
+          <g key={i} transform={`translate(${t.startPoint.x * scale},${t.startPoint.y * scale})`} className="pointer-events-none">
+            <rect x="-38" y="-27" width="76" height="22" rx="7" fill="#2563eb"
+              stroke="#fff" strokeWidth="1.5" filter="drop-shadow(0 2px 6px rgba(37,99,235,0.35))" />
+            <text x="0" y="-14" fill="#ffffff" fontSize="9" fontWeight="700"
+              textAnchor="middle" dominantBaseline="middle">
+              {t.direction.includes('elevator') ? '🛗 Elevator' : '🪜 Stairs'}
+            </text>
+          </g>
+        ))}
 
-        {/* 7. "You Are Here" User Location Marker */}
+        {/* "You Are Here" marker */}
         {userLocation && userLocation.levelId === activeLevel?.id && (
-          <g transform={`translate(${userLocation.x * scale}, ${userLocation.y * scale})`}>
-            {/* Animated radar ripple */}
-            <circle
-              cx="0"
-              cy="0"
-              r="20"
-              fill="#2563eb"
-              className="radar-circle pointer-events-none"
-            />
-            {/* Center solid royal blue marker */}
-            <circle
-              cx="0"
-              cy="0"
-              r="7"
-              fill="#2563eb"
-              stroke="#ffffff"
-              strokeWidth="2.5"
-              filter="drop-shadow(0 2px 6px rgba(37,99,235,0.4))"
-            />
-            {/* Label */}
-            <g transform="translate(0, 14)" className="pointer-events-none">
-              <rect
-                x="-36"
-                y="0"
-                width="72"
-                height="16"
-                rx="4"
-                fill="#0f172a"
-              />
-              <text
-                x="0"
-                y="9"
-                fill="#ffffff"
-                fontSize="8.5"
-                fontWeight="700"
-                textAnchor="middle"
-                dominantBaseline="middle"
-              >
-                YOU ARE HERE
-              </text>
+          <g transform={`translate(${userLocation.x * scale},${userLocation.y * scale})`}>
+            <circle cx="0" cy="0" r="22" fill="#2563eb" className="radar-circle pointer-events-none" />
+            <circle cx="0" cy="0" r="8" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5"
+              filter="drop-shadow(0 2px 8px rgba(37,99,235,0.45))" />
+            <g transform="translate(0,16)" className="pointer-events-none">
+              <rect x="-40" y="0" width="80" height="16" rx="4" fill={TOOLTIP_BG} />
+              <text x="0" y="9" fill="#ffffff" fontSize="8.5" fontWeight="700"
+                textAnchor="middle" dominantBaseline="middle">YOU ARE HERE</text>
             </g>
           </g>
         )}
       </svg>
 
-      {/* Floating Canvas View Controls (+ / - / Reset) */}
+      {/* Zoom controls */}
       <div className="absolute right-4 bottom-24 md:bottom-8 flex flex-col gap-2 z-20">
-        <div className="bg-white p-1 rounded-2xl flex flex-col gap-1 shadow-lg border border-slate-200">
-          <button
-            onClick={handleZoomIn}
-            className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <div className="h-[1px] bg-slate-200 mx-1" />
-          <button
-            onClick={handleZoomOut}
-            className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <div className="h-[1px] bg-slate-200 mx-1" />
-          <button
-            onClick={handleFit}
-            className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
-            title="Fit Map to View"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
+        <div className={`p-1 rounded-2xl flex flex-col gap-1 shadow-lg border
+          ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+          {[
+            { icon: <ZoomIn className="w-4 h-4" />, action: handleZoomIn, title: 'Zoom In' },
+            { icon: <ZoomOut className="w-4 h-4" />, action: handleZoomOut, title: 'Zoom Out' },
+            { icon: <Maximize2 className="w-4 h-4" />, action: handleFit, title: 'Fit Map' },
+          ].map((btn, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <div className={`h-px mx-1 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />}
+              <button onClick={btn.action} title={btn.title}
+                className={`p-2.5 rounded-xl transition
+                  ${isDarkMode
+                    ? 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}>
+                {btn.icon}
+              </button>
+            </React.Fragment>
+          ))}
         </div>
       </div>
 
-      {/* Selected POI Details Popup Banner */}
+      {/* Selected POI popup */}
       {selectedPOI && (
-        <div className="absolute left-4 top-4 z-20 max-w-sm bg-white p-4 rounded-2xl border border-slate-200 shadow-xl animate-in slide-in-from-top-4 duration-150 text-slate-900">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-bold text-slate-900 text-base">{selectedPOI.name}</h4>
-                {selectedPOI.is_accessible && (
-                  <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border border-emerald-200">
-                    <Accessibility className="w-3 h-3" /> ADA
-                  </span>
-                )}
+        <div className={`absolute left-4 top-4 z-20 max-w-xs pointer-events-auto rounded-2xl border shadow-xl animate-in slide-in-from-top-4 duration-150
+          ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-base">{selectedPOI.name}</h4>
+                  {selectedPOI.is_accessible && (
+                    <span className={`px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider border
+                      ${isDarkMode ? 'bg-emerald-950/50 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                      <Accessibility className="w-3 h-3" /> ADA
+                    </span>
+                  )}
+                </div>
+                <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {selectedPOI.description || `Category: ${selectedPOI.category}`}
+                </p>
               </div>
-              <p className="text-xs text-slate-500 mt-1">{selectedPOI.description || `Category: ${selectedPOI.category}`}</p>
+              <button onClick={() => onSelectPOI(null)}
+                className={`p-1 rounded-lg transition ${isDarkMode ? 'text-slate-500 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-400 hover:text-slate-700'}`}>
+                ✕
+              </button>
             </div>
             <button
-              onClick={() => onSelectPOI(null as any)}
-              className="text-slate-400 hover:text-slate-700 text-sm p-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
-            <button
               onClick={() => onQuickNavigateToPOI(selectedPOI)}
-              className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+              className="mt-3 w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
             >
-              <Navigation className="w-3.5 h-3.5" />
-              <span>Get Directions</span>
+              <Navigation className="w-3.5 h-3.5" /> Get Directions
             </button>
           </div>
         </div>
